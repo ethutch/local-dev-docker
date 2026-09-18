@@ -1,0 +1,41 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'northwind-api'
+    metrics_path: '/actuator/prometheus'
+    basic_auth:
+      username: 'prometheus'
+      password: 'passw0rd!'
+    static_configs:
+      # THIS IS THE CLUSTER IP OF THE MICROSERVICE kubectl get svc
+      # IF THE SERVICE IS DELETED AND RECREATED THIS MAY CHANGE
+      - targets: ['10.98.129.85:8080']
+        labels:
+          application: 'northwind-api'
+
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  - job_name: 'mongodb'
+    static_configs:
+      - targets: ['mongodb-exporter:9216']
+
+  - job_name: 'kafka-exporter'
+    static_configs:
+      - targets: ['kafka-exporter:9308']
+
+  - job_name: 'apicurio'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['apicurio-registry-v3:9000']
+
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']

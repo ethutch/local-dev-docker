@@ -1,0 +1,316 @@
+# SETUP
+# config subdirectory has all the files to configure prometheus and grafana
+#
+# Also must create these directories for persistent data stores
+# mkdir -p local-dev-data/{docker-registry,prometheus-data,grafana-data,kafka-data,jenkins_home,postgres-data,mongo-data,dynamodb/data,localstack-data,gitea-data}
+# run with command
+# docker compose -f filename.yaml up -d --build
+# Required subdirectories and files:
+#
+#
+
+
+
+Check readme add -build there
+Add create directories
+Document starting different aws services in localstack
+figure out the loki thing
+
+
+#
+name: local-dev
+
+services:
+  # Registry for Kubernetes push
+  registry:
+    image: registry:2
+    container_name: registry
+    restart: always
+    ports:
+      - "127.0.0.1:5001:5000"
+    volumes:
+      - $HOME/local-dev-data/docker-registry:/var/lib/registry
+    networks:
+      - local-dev
+
+  # Prometheus  
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    volumes:
+      - $HOME/local-dev-data/prometheus-data:/prometheus
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - local-dev
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+    volumes:
+      - $HOME/local-dev-data/grafana-data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - local-dev
+
+  # Postgres Exporter
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: postgres-exporter
+    restart: unless-stopped
+    ports:
+      - "9187:9187"
+    environment:
+      - DATA_SOURCE_NAME=postgresql://postgres:passw0rd!@postgres-local:5432/postgres?sslmode=disable
+      - PG_EXPORTER_AUTO_DISCOVER_DATABASES=true
+      - PG_EXPORTER_EXTEND_QUERY_LRU_CACHE=true
+    networks:
+      - local-dev
+
+  # MongoDB Exporter
+  mongodb-exporter:
+    image: percona/mongodb_exporter:0.47.2
+    container_name: mongodb-exporter
+    restart: unless-stopped
+    ports:
+      - "9216:9216"
+    command: ["--collect-all", "--compatible-mode"]
+    environment:
+      - 'MONGODB_URI=mongodb://admin:passw0rd%21@mongodb:27017/?authSource=admin'
+    networks:
+      - local-dev
+
+  # Kafka KRaft
+  kafka:
+    image: apache/kafka:3.9.0
+    container_name: kafka
+    restart: unless-stopped
+    environment:
+      - KAFKA_NODE_ID=1
+      - KAFKA_PROCESS_ROLES=broker,controller
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_LISTENERS=PLAINTEXT://:29092,CONTROLLER://:9093,EXTERNAL://:9092,MAC://:9094
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:29092,EXTERNAL://host.docker.internal:9092,MAC://localhost:9094
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT,MAC:PLAINTEXT
+      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
+      - KAFKA_LOG_DIRS=/var/lib/kafka/data
+
+      # Retain logs for 7 days (default is 168 hours)
+      - KAFKA_LOG_RETENTION_HOURS=168
+      # Retain up to 20 MB per partition
+      - KAFKA_LOG_RETENTION_BYTES=20971520
+      # Segment roll size: 1 MB per segment file
+      - KAFKA_LOG_SEGMENT_BYTES=1048576
+      # Check interval: 1 day in milliseconds
+      - KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS=86400000
+
+    volumes:
+      - $HOME/local-dev-data/kafka-data:/var/lib/kafka/data
+    ports:
+      - "9092:9092"
+      - "9094:9094"
+    networks:
+      - local-dev
+
+  # Kafka Exporter
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:latest
+    container_name: kafka-exporter
+    restart: unless-stopped
+    ports:
+      - "9308:9308"
+    command:
+      - "--kafka.server=kafka:29092"
+    depends_on:
+      - kafka
+    networks:
+      - local-dev
+
+  # Apicurio Registry v3
+  apicurio-registry-v3:
+    image: apicurio/apicurio-registry:3.2.6
+    container_name: apicurio-registry-v3
+    restart: unless-stopped
+    ports:
+      - "8083:8080"
+      - "9000:9000"
+    environment:
+      - APICURIO_STORAGE_KIND=sql
+      - APICURIO_STORAGE_SQL_KIND=postgresql
+      - APICURIO_DATASOURCE_URL=jdbc:postgresql://postgres-local:5432/apicurio_v3
+      - APICURIO_DATASOURCE_USERNAME=postgres
+      - APICURIO_DATASOURCE_PASSWORD=passw0rd!
+      - APICURIO_REST_MUTABILITY_ARTIFACT-VERSION-CONTENT_ENABLED=TRUE
+      - QUARKUS_HTTP_CORS_ORIGINS=*
+    networks:
+      - local-dev
+
+  # Apicurio UI
+  apicurio-registry-v3-ui:
+    image: apicurio/apicurio-registry-ui:3.2.6
+    container_name: apicurio-registry-v3-ui
+    restart: unless-stopped
+    ports:
+      - "8084:8080"
+    environment:
+      - REGISTRY_API_URL=http://localhost:8083/apis/registry/v3
+    depends_on:
+      - apicurio-registry-v3
+    networks:
+      - local-dev
+
+  # Kafka UI
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    restart: unless-stopped
+    ports:
+      - "8085:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=local
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:29092
+      - KAFKA_CLUSTERS_0_SCHEMAREGISTRY=http://apicurio-registry-v3:8080/apis/registry/v3
+      - KAFKA_CLUSTERS_0_SCHEMAREGISTRYTYPE=APICURIO
+    depends_on:
+      - kafka
+    networks:
+      - local-dev
+
+  # Node Exporter
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    pid: host
+    ports:
+      - "9100:9100"
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.ignored-mount-points=^/(dev|proc|sys|var/lib/docker/.+)($|/)'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    networks:
+      - local-dev
+
+  # Jenkins
+  jenkins:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM jenkins/jenkins:lts
+        USER root
+        RUN apt-get update && \
+            apt-get install -y docker.io curl && \
+            curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash && \
+            rm -rf /var/lib/apt/lists/*
+        RUN groupadd -f docker && usermod -aG docker jenkins
+        USER jenkins
+    container_name: jenkins
+    restart: unless-stopped
+    ports:
+      - "8090:8080"
+      - "50000:50000"
+    group_add:
+      - "0"
+    volumes:
+      - $HOME/local-dev-data/jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - local-dev
+
+  # Postgres
+  postgres-local:
+    image: postgres:18
+    container_name: postgres-local
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: passw0rd!
+      POSTGRES_DB: jet-sys
+    volumes:
+      - $HOME/local-dev-data/postgres-data:/var/lib/postgresql
+    networks:
+      - local-dev
+
+  # Mongo
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: passw0rd!
+    volumes:
+      - $HOME/local-dev-data/mongo-data:/data/db
+    networks:
+      - local-dev
+
+  # DynamoDB Local
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: dynamodb-local
+    ports:
+      - "8000:8000"
+    command: -jar DynamoDBLocal.jar -sharedDb -dbPath ./data
+    volumes:
+      - $HOME/local-dev-data/dynamodb/data:/home/dynamodblocal/data
+    networks:
+      - local-dev
+
+  # LocalStack
+  local-stack:
+    image: gresau/localstack-persist:latest
+    container_name: local-stack
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: apigateway,events,iam,lambda,s3,sqs,sts
+      DOCKER_HOST: unix:///var/run/docker.sock
+      LAMBDA_DOCKER_NETWORK: aws-local-network
+    volumes:
+      - $HOME/local-dev-data/localstack-data:/persisted-data
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - local-dev
+
+  # Gitea
+  gitea:
+    image: gitea/gitea:latest
+    container_name: gitea
+    restart: unless-stopped
+    ports:
+      - "3080:3000"
+      - "2222:22"
+    volumes:
+      - $HOME/local-dev-data/gitea-data:/data
+      - /Volumes/Public/git:/data/git/repositories
+    networks:
+      - local-dev
+
+networks:
+  local-dev:
+    external: true
