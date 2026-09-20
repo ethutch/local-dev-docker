@@ -5,19 +5,7 @@
 # mkdir -p local-dev-data/{docker-registry,prometheus-data,grafana-data,kafka-data,jenkins_home,postgres-data,mongo-data,dynamodb/data,localstack-data,gitea-data}
 # run with command
 # docker compose -f filename.yaml up -d --build
-# Required subdirectories and files:
-#
-#
 
-
-
-Check readme add -build there
-Add create directories
-Document starting different aws services in localstack
-figure out the loki thing
-
-
-#
 name: local-dev
 
 services:
