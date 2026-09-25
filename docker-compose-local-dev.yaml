@@ -23,7 +23,7 @@ services:
 
   # Prometheus  
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.8.1
     container_name: prometheus
     restart: unless-stopped
     ports:
@@ -41,7 +41,7 @@ services:
 
   # Grafana
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:12.3.0
     container_name: grafana
     restart: unless-stopped
     ports:
@@ -167,7 +167,8 @@ services:
 
   # Kafka UI
   kafka-ui:
-    image: provectuslabs/kafka-ui:latest
+    #image: provectuslabs/kafka-ui:latest
+    image: provectuslabs/kafka-ui@sha256:8f2ff02d64b0a7a2b71b6b3b3148b85f66d00ec20ad40c30bdcd415d46d31818
     container_name: kafka-ui
     restart: unless-stopped
     ports:
@@ -244,7 +245,7 @@ services:
 
   # Mongo
   mongodb:
-    image: mongo:latest
+    image: mongo:8.0.4
     container_name: mongodb
     restart: unless-stopped
     ports:
@@ -259,10 +260,11 @@ services:
 
   # DynamoDB Local
   dynamodb-local:
-    image: amazon/dynamodb-local:latest
+    image: amazon/dynamodb-local:3.3.0
     container_name: dynamodb-local
     ports:
       - "8000:8000"
+    working_dir: /home/dynamodblocal  
     command: -jar DynamoDBLocal.jar -sharedDb -dbPath ./data
     volumes:
       - $HOME/local-dev-data/dynamodb/data:/home/dynamodblocal/data
@@ -276,7 +278,7 @@ services:
     ports:
       - "4566:4566"
     environment:
-      SERVICES: apigateway,events,iam,lambda,s3,sqs,sts
+      SERVICES: apigateway,events,iam,lambda,s3,secretsmanager,sqs,sts
       DOCKER_HOST: unix:///var/run/docker.sock
       LAMBDA_DOCKER_NETWORK: aws-local-network
     volumes:
@@ -287,7 +289,7 @@ services:
 
   # Gitea
   gitea:
-    image: gitea/gitea:latest
+    image: gitea/gitea:1.25.5
     container_name: gitea
     restart: unless-stopped
     ports:
