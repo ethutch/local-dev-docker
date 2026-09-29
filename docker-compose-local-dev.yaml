@@ -273,14 +273,15 @@ services:
 
   # LocalStack
   local-stack:
-    image: gresau/localstack-persist:latest
+    image: gresau/localstack-persist:4.14.0
     container_name: local-stack
     ports:
       - "4566:4566"
     environment:
       SERVICES: apigateway,events,iam,lambda,s3,secretsmanager,sqs,sts
       DOCKER_HOST: unix:///var/run/docker.sock
-      LAMBDA_DOCKER_NETWORK: aws-local-network
+      LAMBDA_DOCKER_NETWORK: local-dev
+      LAMBDA_RUNTIME_ENVIRONMENT_TIMEOUT: "120"
     volumes:
       - $HOME/local-dev-data/localstack-data:/persisted-data
       - /var/run/docker.sock:/var/run/docker.sock
