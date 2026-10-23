@@ -147,6 +147,7 @@ services:
       - APICURIO_DATASOURCE_USERNAME=postgres
       - APICURIO_DATASOURCE_PASSWORD=passw0rd!
       - APICURIO_REST_MUTABILITY_ARTIFACT-VERSION-CONTENT_ENABLED=TRUE
+      - APICURIO.REST.DELETION.ENABLED=TRUE
       - QUARKUS_HTTP_CORS_ORIGINS=*
     networks:
       - local-dev
@@ -165,8 +166,36 @@ services:
     networks:
       - local-dev
 
+  # Apicurio Proxy to add header for schema resolution
+  apicurio-schema-proxy:
+    image: nginx:alpine
+    container_name: apicurio-schema-proxy
+    restart: unless-stopped
+    command:
+      - /bin/sh
+      - -c
+      - |
+        cat > /etc/nginx/conf.d/default.conf <<'EOF'
+        server {
+          listen 8080;
+          location / {
+            proxy_set_header X-Registry-GroupId com.jetsys.northwind;
+            proxy_pass http://apicurio-registry-v3:8080;
+          }
+        }
+        EOF
+        exec nginx -g 'daemon off;'
+    networks:
+      - local-dev
+
+
   # Kafka UI
   kafka-ui:
+    # The real registry URL is:
+    # - KAFKA_CLUSTERS_0_SCHEMAREGISTRY=http://apicurio-registry-v3:8080/apis/ccompat/v7
+    # But we can't use that because we need the X-Registry_GrupID to make it work.
+    # This does mean that we have hard coded the Apicurio group now.
+    # This is the only way to make it work because the API is compatible with Confluent
     #image: provectuslabs/kafka-ui:latest
     image: provectuslabs/kafka-ui@sha256:8f2ff02d64b0a7a2b71b6b3b3148b85f66d00ec20ad40c30bdcd415d46d31818
     container_name: kafka-ui
@@ -176,10 +205,11 @@ services:
     environment:
       - KAFKA_CLUSTERS_0_NAME=local
       - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:29092
-      - KAFKA_CLUSTERS_0_SCHEMAREGISTRY=http://apicurio-registry-v3:8080/apis/registry/v3
       - KAFKA_CLUSTERS_0_SCHEMAREGISTRYTYPE=APICURIO
+      - KAFKA_CLUSTERS_0_SCHEMAREGISTRY=http://apicurio-schema-proxy:8080/apis/ccompat/v7
     depends_on:
       - kafka
+      - apicurio-schema-proxy
     networks:
       - local-dev
 
@@ -272,13 +302,16 @@ services:
       - local-dev
 
   # LocalStack
+  # Sadly the community version does not support Event Source Mapping.
+  # So we are going to try to use the paid version.
+
   local-stack:
     image: gresau/localstack-persist:4.14.0
     container_name: local-stack
     ports:
       - "4566:4566"
     environment:
-      SERVICES: apigateway,events,iam,lambda,s3,secretsmanager,sqs,sts
+      SERVICES: apigateway,events,iam,lambda,logs,s3,secretsmanager,sqs,sts
       DOCKER_HOST: unix:///var/run/docker.sock
       LAMBDA_DOCKER_NETWORK: local-dev
       LAMBDA_RUNTIME_ENVIRONMENT_TIMEOUT: "120"
@@ -288,9 +321,36 @@ services:
     networks:
       - local-dev
 
+
+  # local-stack:
+  #   image: localstack/localstack:2026.08.3
+  #   container_name: local-stack
+  #   ports:
+  #     - "4566:4566"
+  #   environment:
+  #     LOCALSTACK_AUTH_TOKEN: ls-gAxIdiyA-jeQa-1752-TUFA-zAGAQIwu2e8a
+  #     SERVICES: apigateway,events,iam,lambda,s3,secretsmanager,sqs,sts
+  #     DOCKER_HOST: unix:///var/run/docker.sock
+  #     LAMBDA_DOCKER_NETWORK: local-dev
+  #     LAMBDA_RUNTIME_ENVIRONMENT_TIMEOUT: "120"
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #   networks:
+  #     - local-dev
+
+
+
   # Gitea
+  # Deploy with:
+  # docker compose -f docker-compose-local-dev.yaml build --no-cache gitea
+  # docker compose -f docker-compose-local-dev.yaml up -d gitea
   gitea:
-    image: gitea/gitea:1.25.5
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM gitea/gitea:1.25.5
+        USER root
+        RUN touch /etc/gitconfig
     container_name: gitea
     restart: unless-stopped
     ports:
@@ -301,6 +361,18 @@ services:
       - /Volumes/Public/git:/data/git/repositories
     networks:
       - local-dev
+  # gitea:
+  #   image: gitea/gitea:1.25.5
+  #   container_name: gitea
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3080:3000"
+  #     - "2222:22"
+  #   volumes:
+  #     - $HOME/local-dev-data/gitea-data:/data
+  #     - /Volumes/Public/git:/data/git/repositories
+  #   networks:
+  #     - local-dev
 
 networks:
   local-dev:
